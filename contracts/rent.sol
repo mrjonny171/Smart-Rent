@@ -5,6 +5,9 @@ pragma solidity ^0.8.17;
 error InvalidFunder();
 error InvalidManager();
 error InsuficientFunds();
+error NoAuthorization();
+error OwnerNoExtension();
+error TenantNoExtension();
 
 contract rent {
     //Owner of the house
@@ -24,13 +27,20 @@ contract rent {
     //Contract Balance
     uint256 private s_balance;
 
-    //Rent Price
+    //Rent  Price
     uint256 private s_rentPrice;
 
-    constructor(address manager, uint256 rentPrice) {
+    //Duration of the contract
+    uint256 private s_numberOfMonths;
+
+    // Address => New Duration => True / False
+    mapping(address => mapping(uint256 => bool)) private s_extendAuthorizations;
+
+    constructor(address manager, uint256 rentPrice, uint256 numberOfMonths) {
         s_owner = msg.sender;
         i_manager = manager;
         s_rentPrice = rentPrice;
+        s_numberOfMonths = numberOfMonths;
     }
 
     /**
@@ -43,6 +53,7 @@ contract rent {
         s_balance += msg.value;
     }
 
+    //Pay the corresponding Value to the owner and the unlockit Fee
     function sendPayment() public payable {
         if (msg.sender != i_manager) {
             revert InvalidManager();
@@ -64,6 +75,33 @@ contract rent {
         require(success, 'Payment Failed');
     }
 
+    function increaseContractDuration(uint256 increasedDuration) public {
+        if (msg.sender == s_owner) {
+            s_extendAuthorizations[s_owner][increasedDuration] = true;
+        }
+
+        if (msg.sender == s_tenant) {
+            s_extendAuthorizations[s_tenant][increasedDuration] = true;
+        }
+
+        if (msg.sender == i_manager) {
+            if (!s_extendAuthorizations[s_owner][increasedDuration]) {
+                revert OwnerNoExtension();
+            }
+
+            if (!s_extendAuthorizations[s_tenant][increasedDuration]) {
+                revert TenantNoExtension();
+            }
+
+            s_extendAuthorizations[s_owner][increasedDuration] = false;
+            s_extendAuthorizations[s_tenant][increasedDuration] = false;
+
+            s_numberOfMonths += increasedDuration;
+        } else {
+            revert NoAuthorization();
+        }
+    }
+
     function getManager() public view returns (address) {
         return i_manager;
     }
@@ -78,5 +116,9 @@ contract rent {
 
     function getRentPrice() public view returns (uint256) {
         return s_rentPrice;
+    }
+
+    function getUnlockitFee() public pure returns (uint256) {
+        return UNLOCKIT_FEE;
     }
 }
