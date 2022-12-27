@@ -8,6 +8,8 @@ error InsuficientFunds();
 error NoAuthorization();
 error OwnerNoExtension();
 error TenantNoExtension();
+error ContractExpired();
+error ContractOccupied();
 
 contract rent {
     //Owner of the house
@@ -33,6 +35,8 @@ contract rent {
     //Duration of the contract
     uint256 private s_numberOfMonths;
 
+    uint256 private s_paidMonths;
+
     // Address => New Duration => True / False
     mapping(address => mapping(uint256 => bool)) private s_extendAuthorizations;
 
@@ -41,6 +45,15 @@ contract rent {
         i_manager = manager;
         s_rentPrice = rentPrice;
         s_numberOfMonths = numberOfMonths;
+        s_paidMonths = 0;
+    }
+
+    function beTenant() public {
+        if (s_tenant != address(0)) {
+            revert ContractOccupied();
+        }
+
+        s_tenant = msg.sender;
     }
 
     /**
@@ -63,6 +76,10 @@ contract rent {
             revert InsuficientFunds();
         }
 
+        if (s_paidMonths == s_numberOfMonths) {
+            revert ContractExpired();
+        }
+
         bool success;
 
         uint256 ownerPayment = (s_rentPrice * (100 - UNLOCKIT_FEE)) / 100;
@@ -73,8 +90,14 @@ contract rent {
 
         (success, ) = i_manager.call{value: feePayment}('');
         require(success, 'Payment Failed');
+
+        s_paidMonths++;
+        s_balance -= s_rentPrice;
     }
 
+    /**
+     * Function to request authorization from tenant and owner to extend the contract duration
+     */
     function increaseContractDuration(uint256 increasedDuration) public {
         if (msg.sender == s_owner) {
             s_extendAuthorizations[s_owner][increasedDuration] = true;
