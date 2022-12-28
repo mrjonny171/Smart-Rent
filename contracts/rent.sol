@@ -4,27 +4,37 @@ pragma solidity ^0.8.17;
 
 error InvalidFunder();
 error InvalidManager();
+error InvalidOwner();
+
 error InsuficientFunds();
 error NoAuthorization();
 error OwnerNoExtension();
 error TenantNoExtension();
 error ContractExpired();
 error ContractOccupied();
+error NoCandidates();
 
 contract rent {
+    //Struct that defines the values that our contract will be developed in
+    struct candidate {
+        address account;
+        uint256 revenue;
+    }
+
     //Owner of the house
     address private s_owner;
-
-    //Starting date of the rent contract
-    //uint256 private i_startingDate; ?
 
     //Unlockit Address
     address private immutable i_manager;
 
+    // Possible tenants
+    candidate[] private s_candidates;
+    uint256 private nPossibleTenants;
+
     uint256 private constant UNLOCKIT_FEE = 1;
 
     //Tenant, the one who is paying the contract
-    address private s_tenant;
+    address private s_chosenTenant;
 
     //Contract Balance
     uint256 private s_balance;
@@ -40,6 +50,10 @@ contract rent {
     // Address => New Duration => True / False
     mapping(address => mapping(uint256 => bool)) private s_extendAuthorizations;
 
+    /**
+     * @dev Owner is only responsible for creating the initial
+     * state of the renting contract
+     */
     constructor(address manager, uint256 rentPrice, uint256 numberOfMonths) {
         s_owner = msg.sender;
         i_manager = manager;
@@ -48,25 +62,30 @@ contract rent {
         s_paidMonths = 0;
     }
 
-    function beTenant() public {
-        if (s_tenant != address(0)) {
-            revert ContractOccupied();
+    function chooseTenant() public {
+        if (msg.sender != s_owner) {
+            revert InvalidOwner();
         }
 
-        s_tenant = msg.sender;
+        if (nPossibleTenants == 0) {
+            revert NoCandidates();
+        }
+
+        candidate memory bestTenant = s_candidates[0];
+
+        for (uint i = 1; i < nPossibleTenants; i++) {
+            if (s_candidates[i].revenue > bestTenant.revenue) {
+                bestTenant = s_candidates[i];
+            }
+        }
+
+        s_chosenTenant = bestTenant.account;
     }
 
     /**
-     * Funds the contract with a certain amount of eth
+     * @dev Manager Functions
      */
-    function fund() public payable {
-        if (msg.sender != s_tenant) {
-            revert InvalidFunder();
-        }
-        s_balance += msg.value;
-    }
 
-    //Pay the corresponding Value to the owner and the unlockit Fee
     function sendPayment() public payable {
         if (msg.sender != i_manager) {
             revert InvalidManager();
@@ -96,15 +115,38 @@ contract rent {
     }
 
     /**
+     * @dev Tenant Functions
+     */
+
+    function applyForRentContract(
+        uint256 revenue
+    ) public /* Argumentos Estilo numeros do IRS, etc */ {
+        s_candidates.push(candidate(msg.sender, revenue));
+        nPossibleTenants++;
+    }
+
+    /**
+     * Funds the contract with a certain amount of eth
+     */
+    function fund() public payable {
+        if (msg.sender != s_chosenTenant) {
+            revert InvalidFunder();
+        }
+        s_balance += msg.value;
+    }
+
+    /**
      * Function to request authorization from tenant and owner to extend the contract duration
      */
+
+    //Refactor
     function increaseContractDuration(uint256 increasedDuration) public {
         if (msg.sender == s_owner) {
             s_extendAuthorizations[s_owner][increasedDuration] = true;
         }
 
-        if (msg.sender == s_tenant) {
-            s_extendAuthorizations[s_tenant][increasedDuration] = true;
+        if (msg.sender == s_chosenTenant) {
+            s_extendAuthorizations[s_chosenTenant][increasedDuration] = true;
         }
 
         if (msg.sender == i_manager) {
@@ -112,18 +154,22 @@ contract rent {
                 revert OwnerNoExtension();
             }
 
-            if (!s_extendAuthorizations[s_tenant][increasedDuration]) {
+            if (!s_extendAuthorizations[s_chosenTenant][increasedDuration]) {
                 revert TenantNoExtension();
             }
 
             s_extendAuthorizations[s_owner][increasedDuration] = false;
-            s_extendAuthorizations[s_tenant][increasedDuration] = false;
+            s_extendAuthorizations[s_chosenTenant][increasedDuration] = false;
 
             s_numberOfMonths += increasedDuration;
         } else {
             revert NoAuthorization();
         }
     }
+
+    /**
+     * @dev Getters
+     */
 
     function getManager() public view returns (address) {
         return i_manager;
