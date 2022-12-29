@@ -2,20 +2,22 @@
 
 pragma solidity ^0.8.17;
 
-error InvalidFunder();
+error InvalidTenant();
 error InvalidManager();
 error InvalidOwner();
 
 error InsuficientFunds();
 error NoAuthorization();
-error OwnerNoExtension();
-error TenantNoExtension();
+error RequestOwnerAuthorization();
+error RequestTenantAuthorization();
 error ContractExpired();
 error ContractOccupied();
 error NoCandidates();
 
-contract rent {
+contract smartRent {
     //Struct that defines the values that our contract will be developed in
+    //What can be public?
+
     struct candidate {
         address account;
         uint256 revenue;
@@ -29,7 +31,7 @@ contract rent {
 
     // Possible tenants
     candidate[] private s_candidates;
-    uint256 private nPossibleTenants;
+    uint256 private nCandidates;
 
     uint256 private constant UNLOCKIT_FEE = 1;
 
@@ -45,6 +47,7 @@ contract rent {
     //Duration of the contract
     uint256 private s_numberOfMonths;
 
+    //Number of paid months
     uint256 private s_paidMonths;
 
     // Address => New Duration => True / False
@@ -52,7 +55,7 @@ contract rent {
 
     /**
      * @dev Owner is only responsible for creating the initial
-     * state of the renting contract
+     * state of the renting contract and choosing the appropriate tenant
      */
     constructor(address manager, uint256 rentPrice, uint256 numberOfMonths) {
         s_owner = msg.sender;
@@ -62,18 +65,22 @@ contract rent {
         s_paidMonths = 0;
     }
 
+    /**
+     * @dev Mock function
+     */
+
     function chooseTenant() public {
         if (msg.sender != s_owner) {
             revert InvalidOwner();
         }
 
-        if (nPossibleTenants == 0) {
+        if (nCandidates == 0) {
             revert NoCandidates();
         }
 
         candidate memory bestTenant = s_candidates[0];
 
-        for (uint i = 1; i < nPossibleTenants; i++) {
+        for (uint i = 1; i < nCandidates; i++) {
             if (s_candidates[i].revenue > bestTenant.revenue) {
                 bestTenant = s_candidates[i];
             }
@@ -82,11 +89,21 @@ contract rent {
         s_chosenTenant = bestTenant.account;
     }
 
+    function increaseOwnerContractDuration(uint256 increasedDuration) public {
+        if (msg.sender != s_owner) {
+            revert InvalidOwner();
+        }
+
+        s_extendAuthorizations[s_owner][increasedDuration] = true;
+    }
+
     /**
      * @dev Manager Functions
+     * This function will be called by the chainLink
+     * offchain nodes   in the first day of every month
      */
 
-    function sendPayment() public payable {
+    function processPayment() public payable {
         if (msg.sender != i_manager) {
             revert InvalidManager();
         }
@@ -119,52 +136,55 @@ contract rent {
      */
 
     function applyForRentContract(
-        uint256 revenue
-    ) public /* Argumentos Estilo numeros do IRS, etc */ {
+        uint256 revenue /* Argumentos Estilo numeros do IRS, etc */
+    ) public {
         s_candidates.push(candidate(msg.sender, revenue));
-        nPossibleTenants++;
+        nCandidates++;
     }
 
     /**
-     * Funds the contract with a certain amount of eth
+     * @dev Funds the contract with a certain amount of eth
      */
     function fund() public payable {
         if (msg.sender != s_chosenTenant) {
-            revert InvalidFunder();
+            revert InvalidTenant();
         }
         s_balance += msg.value;
     }
 
     /**
-     * Function to request authorization from tenant and owner to extend the contract duration
+     * @dev Registers that the tenant wants to extend the contract for a
+     * specific period of time
+     */
+    function increaseTenantContractDuration(uint256 increasedDuration) public {
+        if (msg.sender != s_chosenTenant) {
+            revert InvalidTenant();
+        }
+
+        s_extendAuthorizations[s_chosenTenant][increasedDuration] = true;
+    }
+
+    /**
+     * @dev Function to validate an extension of contract
      */
 
-    //Refactor
     function increaseContractDuration(uint256 increasedDuration) public {
-        if (msg.sender == s_owner) {
-            s_extendAuthorizations[s_owner][increasedDuration] = true;
+        if (msg.sender != i_manager) {
+            revert InvalidManager();
         }
 
-        if (msg.sender == s_chosenTenant) {
-            s_extendAuthorizations[s_chosenTenant][increasedDuration] = true;
+        if (!s_extendAuthorizations[s_owner][increasedDuration]) {
+            revert RequestOwnerAuthorization();
         }
 
-        if (msg.sender == i_manager) {
-            if (!s_extendAuthorizations[s_owner][increasedDuration]) {
-                revert OwnerNoExtension();
-            }
-
-            if (!s_extendAuthorizations[s_chosenTenant][increasedDuration]) {
-                revert TenantNoExtension();
-            }
-
-            s_extendAuthorizations[s_owner][increasedDuration] = false;
-            s_extendAuthorizations[s_chosenTenant][increasedDuration] = false;
-
-            s_numberOfMonths += increasedDuration;
-        } else {
-            revert NoAuthorization();
+        if (!s_extendAuthorizations[s_chosenTenant][increasedDuration]) {
+            revert RequestTenantAuthorization();
         }
+
+        s_extendAuthorizations[s_owner][increasedDuration] = false;
+        s_extendAuthorizations[s_chosenTenant][increasedDuration] = false;
+
+        s_numberOfMonths += increasedDuration;
     }
 
     /**

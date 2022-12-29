@@ -1,0 +1,35 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "contracts/smartRent.sol": {
+      "content": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.17;\n\nerror InvalidTenant();\nerror InvalidManager();\nerror InvalidOwner();\n\nerror InsuficientFunds();\nerror NoAuthorization();\nerror RequestOwnerAuthorization();\nerror RequestTenantAuthorization();\nerror ContractExpired();\nerror ContractOccupied();\nerror NoCandidates();\n\ncontract smartRent {\n    //Struct that defines the values that our contract will be developed in\n    //What can be public?\n\n    struct candidate {\n        address account;\n        uint256 revenue;\n    }\n\n    //Owner of the house\n    address private s_owner;\n\n    //Unlockit Address\n    address private immutable i_manager;\n\n    // Possible tenants\n    candidate[] private s_candidates;\n    uint256 private nCandidates;\n\n    uint256 private constant UNLOCKIT_FEE = 1;\n\n    //Tenant, the one who is paying the contract\n    address private s_chosenTenant;\n\n    //Contract Balance\n    uint256 private s_balance;\n\n    //Rent  Price\n    uint256 private s_rentPrice;\n\n    //Duration of the contract\n    uint256 private s_numberOfMonths;\n\n    //Number of paid months\n    uint256 private s_paidMonths;\n\n    // Address => New Duration => True / False\n    mapping(address => mapping(uint256 => bool)) private s_extendAuthorizations;\n\n    /**\n     * @dev Owner is only responsible for creating the initial\n     * state of the renting contract and choosing the appropriate tenant\n     */\n    constructor(address manager, uint256 rentPrice, uint256 numberOfMonths) {\n        s_owner = msg.sender;\n        i_manager = manager;\n        s_rentPrice = rentPrice;\n        s_numberOfMonths = numberOfMonths;\n        s_paidMonths = 0;\n    }\n\n    /**\n     * @dev Mock function\n     */\n\n    function chooseTenant() public {\n        if (msg.sender != s_owner) {\n            revert InvalidOwner();\n        }\n\n        if (nCandidates == 0) {\n            revert NoCandidates();\n        }\n\n        candidate memory bestTenant = s_candidates[0];\n\n        for (uint i = 1; i < nCandidates; i++) {\n            if (s_candidates[i].revenue > bestTenant.revenue) {\n                bestTenant = s_candidates[i];\n            }\n        }\n\n        s_chosenTenant = bestTenant.account;\n    }\n\n    function increaseOwnerContractDuration(uint256 increasedDuration) public {\n        if (msg.sender != s_owner) {\n            revert InvalidOwner();\n        }\n\n        s_extendAuthorizations[s_owner][increasedDuration] = true;\n    }\n\n    /**\n     * @dev Manager Functions\n     * This function will be called by the chainLink\n     * offchain nodes   in the first day of every month\n     */\n\n    function processPayment() public payable {\n        if (msg.sender != i_manager) {\n            revert InvalidManager();\n        }\n\n        if (s_balance < s_rentPrice) {\n            revert InsuficientFunds();\n        }\n\n        if (s_paidMonths == s_numberOfMonths) {\n            revert ContractExpired();\n        }\n\n        bool success;\n\n        uint256 ownerPayment = (s_rentPrice * (100 - UNLOCKIT_FEE)) / 100;\n        uint256 feePayment = (s_rentPrice * UNLOCKIT_FEE) / 100;\n\n        (success, ) = s_owner.call{value: ownerPayment}('');\n        require(success, 'Payment Failed');\n\n        (success, ) = i_manager.call{value: feePayment}('');\n        require(success, 'Payment Failed');\n\n        s_paidMonths++;\n        s_balance -= s_rentPrice;\n    }\n\n    /**\n     * @dev Tenant Functions\n     */\n\n    function applyForRentContract(\n        uint256 revenue /* Argumentos Estilo numeros do IRS, etc */\n    ) public {\n        s_candidates.push(candidate(msg.sender, revenue));\n        nCandidates++;\n    }\n\n    /**\n     * @dev Funds the contract with a certain amount of eth\n     */\n    function fund() public payable {\n        if (msg.sender != s_chosenTenant) {\n            revert InvalidTenant();\n        }\n        s_balance += msg.value;\n    }\n\n    /**\n     * @dev Registers that the tenant wants to extend the contract for a\n     * specific period of time\n     */\n    function increaseTenantContractDuration(uint256 increasedDuration) public {\n        if (msg.sender != s_chosenTenant) {\n            revert InvalidTenant();\n        }\n\n        s_extendAuthorizations[s_chosenTenant][increasedDuration] = true;\n    }\n\n    /**\n     * @dev Function to validate an extension of contract\n     */\n\n    function increaseContractDuration(uint256 increasedDuration) public {\n        if (msg.sender != i_manager) {\n            revert InvalidManager();\n        }\n\n        if (!s_extendAuthorizations[s_owner][increasedDuration]) {\n            revert RequestOwnerAuthorization();\n        }\n\n        if (!s_extendAuthorizations[s_chosenTenant][increasedDuration]) {\n            revert RequestTenantAuthorization();\n        }\n\n        s_extendAuthorizations[s_owner][increasedDuration] = false;\n        s_extendAuthorizations[s_chosenTenant][increasedDuration] = false;\n\n        s_numberOfMonths += increasedDuration;\n    }\n\n    /**\n     * @dev Getters\n     */\n\n    function getManager() public view returns (address) {\n        return i_manager;\n    }\n\n    function getOwner() public view returns (address) {\n        return s_owner;\n    }\n\n    function getBalance() public view returns (uint256) {\n        return s_balance;\n    }\n\n    function getRentPrice() public view returns (uint256) {\n        return s_rentPrice;\n    }\n\n    function getUnlockitFee() public pure returns (uint256) {\n        return UNLOCKIT_FEE;\n    }\n}\n"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
