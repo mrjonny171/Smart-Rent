@@ -24,16 +24,16 @@ contract smartRent {
     }
 
     //Owner of the house
-    address private s_owner;
+    address private immutable i_owner;
 
-    //Unlockit Address
+    //manager Address
     address private immutable i_manager;
 
     // Possible tenants
     candidate[] private s_candidates;
     uint256 private nCandidates;
 
-    uint256 private constant UNLOCKIT_FEE = 1;
+    uint256 private constant MANAGER_FEE = 1;
 
     //Tenant, the one who is paying the contract
     address private s_chosenTenant;
@@ -58,7 +58,7 @@ contract smartRent {
      * state of the renting contract and choosing the appropriate tenant
      */
     constructor(address manager, uint256 rentPrice, uint256 numberOfMonths) {
-        s_owner = msg.sender;
+        i_owner = msg.sender;
         i_manager = manager;
         s_rentPrice = rentPrice;
         s_numberOfMonths = numberOfMonths;
@@ -70,7 +70,7 @@ contract smartRent {
      */
 
     function chooseTenant() public {
-        if (msg.sender != s_owner) {
+        if (msg.sender != i_owner) {
             revert InvalidOwner();
         }
 
@@ -86,15 +86,17 @@ contract smartRent {
             }
         }
 
+        delete s_candidates;
+
         s_chosenTenant = bestTenant.account;
     }
 
     function increaseOwnerContractDuration(uint256 increasedDuration) public {
-        if (msg.sender != s_owner) {
+        if (msg.sender != i_owner) {
             revert InvalidOwner();
         }
 
-        s_extendAuthorizations[s_owner][increasedDuration] = true;
+        s_extendAuthorizations[i_owner][increasedDuration] = true;
     }
 
     /**
@@ -118,10 +120,10 @@ contract smartRent {
 
         bool success;
 
-        uint256 ownerPayment = (s_rentPrice * (100 - UNLOCKIT_FEE)) / 100;
-        uint256 feePayment = (s_rentPrice * UNLOCKIT_FEE) / 100;
+        uint256 ownerPayment = (s_rentPrice * (100 - MANAGER_FEE)) / 100;
+        uint256 feePayment = (s_rentPrice * MANAGER_FEE) / 100;
 
-        (success, ) = s_owner.call{value: ownerPayment}('');
+        (success, ) = i_owner.call{value: ownerPayment}('');
         require(success, 'Payment Failed');
 
         (success, ) = i_manager.call{value: feePayment}('');
@@ -173,7 +175,7 @@ contract smartRent {
             revert InvalidManager();
         }
 
-        if (!s_extendAuthorizations[s_owner][increasedDuration]) {
+        if (!s_extendAuthorizations[i_owner][increasedDuration]) {
             revert RequestOwnerAuthorization();
         }
 
@@ -181,7 +183,7 @@ contract smartRent {
             revert RequestTenantAuthorization();
         }
 
-        s_extendAuthorizations[s_owner][increasedDuration] = false;
+        s_extendAuthorizations[i_owner][increasedDuration] = false;
         s_extendAuthorizations[s_chosenTenant][increasedDuration] = false;
 
         s_numberOfMonths += increasedDuration;
@@ -196,7 +198,7 @@ contract smartRent {
     }
 
     function getOwner() public view returns (address) {
-        return s_owner;
+        return i_owner;
     }
 
     function getBalance() public view returns (uint256) {
@@ -207,7 +209,11 @@ contract smartRent {
         return s_rentPrice;
     }
 
-    function getUnlockitFee() public pure returns (uint256) {
-        return UNLOCKIT_FEE;
+    function getManagerFee() public pure returns (uint256) {
+        return MANAGER_FEE;
+    }
+
+    function getChosenTenant() public view returns (address) {
+        return s_chosenTenant;
     }
 }
