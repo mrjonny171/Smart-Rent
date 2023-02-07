@@ -216,4 +216,8 @@ contract smartRent {
     function getChosenTenant() public view returns (address) {
         return s_chosenTenant;
     }
+
+    function getNumberOfMonths() public view returns (uint256) {
+        return s_numberOfMonths;
+    }
 }
